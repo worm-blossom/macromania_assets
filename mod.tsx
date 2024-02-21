@@ -11,7 +11,7 @@ import {
   path,
 } from "./deps.ts";
 
-const l = createLogger("AssetsLogger");
+const l = createLogger("LoggerAssets");
 
 type AssetsState = {
   /**
