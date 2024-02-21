@@ -156,7 +156,7 @@ export function Assets(
               };
 
               // Do we know about this name?
-              const subtree = tree.children[entry.name];
+              const subtree = tree.children !== undefined ? tree.children[entry.name] : undefined;
 
               if (entry.isFile) {
                 // Apply a transform or not, depending on what we knew about this.
@@ -294,7 +294,7 @@ export function Assets(
  */
 export type AssetDir = {
   transformation?: "ignore" | AssetTransform;
-  children: Record<string, AssetDir | ("ignore" | AssetTransform)>;
+  children?: Record<string, AssetDir | ("ignore" | AssetTransform)>;
 };
 
 /**
