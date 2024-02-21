@@ -12,6 +12,8 @@ import {
 } from "./deps.ts";
 
 const l = createLogger("LoggerAssets");
+const ConfigMacro = l.ConfigMacro;
+export { ConfigMacro as LoggerAssets };
 
 type AssetsState = {
   /**
