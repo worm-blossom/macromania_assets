@@ -317,6 +317,21 @@
     "https://deno.land/std@0.63.0/path/mod.ts": "6de8885c2534757097818e302becd1cefcbc4c28ac022cc279e612ee04e8cfd1",
     "https://deno.land/std@0.63.0/path/posix.ts": "1a6e53e1c90dde43750f38134ace0f6300f7330f5456b60d4979a4564fcf5f7a",
     "https://deno.land/std@0.63.0/path/separator.ts": "9dd15d46ff84a16e13554f56af7fee1f85f8d0f379efbbe60ac066a60561f036",
-    "https://deno.land/std@0.63.0/path/win32.ts": "b530878b0f3f281c7f06fa73dc8e89a15106ab06e88ca1dea27394d09a1b0514"
+    "https://deno.land/std@0.63.0/path/win32.ts": "b530878b0f3f281c7f06fa73dc8e89a15106ab06e88ca1dea27394d09a1b0514",
+    "https://deno.land/x/assert_fs@v0.1.0/deps.ts": "7a91f1580926a0284089dd347043a646fe06df3c30a89fd312d1524b1c453ba9",
+    "https://deno.land/x/assert_fs@v0.1.0/mod.ts": "9123cca8fb38cbcdb82b62cac72b30de0af80f4d869b4793ddafb68cdf6f9fc7",
+    "https://deno.land/x/logging_utils@v10.0/deps.ts": "1b27dc43357ce3edb11d55d0d91e8c7c41868d64dcf09c31857e2936a9bec8e9",
+    "https://deno.land/x/logging_utils@v10.0/mod.ts": "09bf55c9635878962fe5ddcc19d87d6cfdb62385ce062a49f9df1d098c513feb",
+    "https://deno.land/x/macromania@v0.1.0/deps.ts": "8d6e33b37efd28a06bf9fbff8160d1b60fcccc0fac0e43c04ad7c379d50e322c",
+    "https://deno.land/x/macromania@v0.1.0/mod.ts": "cc434407b5fb94dced8745356177ed087b3125c890d3fd53d38e2787e09446cc",
+    "https://deno.land/x/macromania@v0.1.0/stack.ts": "722f5ba600251b39cda4a512c00d3d64bb147795e958fe319c29c25b56fbd0b3",
+    "https://deno.land/x/macromania_config@v0.1.0/deps.ts": "2fc92ca21191a84ec6b87b38af0b5a1c663423c8d83ec0512018c49055d59142",
+    "https://deno.land/x/macromania_config@v0.1.0/mod.tsx": "722ff20cad0032909eff96e5675b1f05ae1ee84cc4124f2ce323345c1553413c",
+    "https://deno.land/x/macromania_fs@v0.1.2/deps.ts": "3a735d3556941b9c5f4b182221d5f266f3d02b6918853f7b773d0a740252cd6f",
+    "https://deno.land/x/macromania_fs@v0.1.2/mod.tsx": "5a4be32f555486feb9966e6d45c0fadb3260f9bbe34d7c9f2493511ec684cf74",
+    "https://deno.land/x/macromania_logger@v0.1.1/deps.ts": "7cc8cfbe07ff9fc4e70dfb68a9f269feb60a973587bc59e47f54837f45f6e78f",
+    "https://deno.land/x/macromania_logger@v0.1.1/mod.tsx": "8d8558556129622f121649c8acd8db1f1e0a1952271d29f344c8877f5c67b254",
+    "https://deno.land/x/macromania_outfs@v0.1.0/deps.ts": "7a2e20d9943940ae241156faf6e4ff6b9a047fcd1c1b136ee65c4191432d3d5f",
+    "https://deno.land/x/macromania_outfs@v0.1.0/mod.tsx": "b950169859430ee9242a8790941dbca4182851a3da8910341d9db5d2006d2f34"
   }
 }
