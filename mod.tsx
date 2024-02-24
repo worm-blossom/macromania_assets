@@ -25,9 +25,9 @@ type AssetsState = {
   processed: Map<string, string[]>;
 };
 
-const [getState, _setState] = createSubstate<AssetsState>({
+const [getState, _setState] = createSubstate<AssetsState>(() => ({
   processed: new Map(),
-});
+}));
 
 /**
  * Given a sequence of names in the `assets` of the `Assets` macro, returns

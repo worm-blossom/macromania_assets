@@ -325,13 +325,24 @@
     "https://deno.land/x/macromania@v0.1.0/deps.ts": "8d6e33b37efd28a06bf9fbff8160d1b60fcccc0fac0e43c04ad7c379d50e322c",
     "https://deno.land/x/macromania@v0.1.0/mod.ts": "cc434407b5fb94dced8745356177ed087b3125c890d3fd53d38e2787e09446cc",
     "https://deno.land/x/macromania@v0.1.0/stack.ts": "722f5ba600251b39cda4a512c00d3d64bb147795e958fe319c29c25b56fbd0b3",
+    "https://deno.land/x/macromania@v0.2.0/deps.ts": "8d6e33b37efd28a06bf9fbff8160d1b60fcccc0fac0e43c04ad7c379d50e322c",
+    "https://deno.land/x/macromania@v0.2.0/mod.ts": "f65d56c02c96c0606b8faeb9d3bf49a00c7943fd7435e71cab5153e6214c8405",
+    "https://deno.land/x/macromania@v0.2.0/stack.ts": "722f5ba600251b39cda4a512c00d3d64bb147795e958fe319c29c25b56fbd0b3",
     "https://deno.land/x/macromania_config@v0.1.0/deps.ts": "2fc92ca21191a84ec6b87b38af0b5a1c663423c8d83ec0512018c49055d59142",
     "https://deno.land/x/macromania_config@v0.1.0/mod.tsx": "722ff20cad0032909eff96e5675b1f05ae1ee84cc4124f2ce323345c1553413c",
+    "https://deno.land/x/macromania_config@v0.2.0/deps.ts": "eb9e074804a283c314de893c7340c38a6eff74dba6f9e15c5217787675e871e8",
+    "https://deno.land/x/macromania_config@v0.2.0/mod.tsx": "72375a4a65765f673896530a37968938de111bb3713fd522271f8e231b343998",
     "https://deno.land/x/macromania_fs@v0.1.2/deps.ts": "3a735d3556941b9c5f4b182221d5f266f3d02b6918853f7b773d0a740252cd6f",
     "https://deno.land/x/macromania_fs@v0.1.2/mod.tsx": "5a4be32f555486feb9966e6d45c0fadb3260f9bbe34d7c9f2493511ec684cf74",
+    "https://deno.land/x/macromania_fs@v0.2.0/deps.ts": "7310b2b75a13aad82826e78e6d2775dda15cd6a6592eb808e833ec07dc346750",
+    "https://deno.land/x/macromania_fs@v0.2.0/mod.tsx": "5a4be32f555486feb9966e6d45c0fadb3260f9bbe34d7c9f2493511ec684cf74",
     "https://deno.land/x/macromania_logger@v0.1.1/deps.ts": "7cc8cfbe07ff9fc4e70dfb68a9f269feb60a973587bc59e47f54837f45f6e78f",
     "https://deno.land/x/macromania_logger@v0.1.1/mod.tsx": "8d8558556129622f121649c8acd8db1f1e0a1952271d29f344c8877f5c67b254",
+    "https://deno.land/x/macromania_logger@v0.3.0/deps.ts": "4850f638d01263536174bccf6bf04958d63fdaba6a90940b84e146212e3bf13c",
+    "https://deno.land/x/macromania_logger@v0.3.0/mod.tsx": "e7800408481b6bc0da0ef28c6b38c36c8480149a2543c7b2b42f9791e9fd9fce",
     "https://deno.land/x/macromania_outfs@v0.1.0/deps.ts": "7a2e20d9943940ae241156faf6e4ff6b9a047fcd1c1b136ee65c4191432d3d5f",
-    "https://deno.land/x/macromania_outfs@v0.1.0/mod.tsx": "b950169859430ee9242a8790941dbca4182851a3da8910341d9db5d2006d2f34"
+    "https://deno.land/x/macromania_outfs@v0.1.0/mod.tsx": "b950169859430ee9242a8790941dbca4182851a3da8910341d9db5d2006d2f34",
+    "https://deno.land/x/macromania_outfs@v0.2.0/deps.ts": "c62f953d3d14d05b455932e99668129036cec7ba323825ec5d48d5b17f3657d1",
+    "https://deno.land/x/macromania_outfs@v0.2.0/mod.tsx": "df398f04d77e21a345a2f2a4f34c5fe78437f39898301840d4272d6742bb353d"
   }
 }
