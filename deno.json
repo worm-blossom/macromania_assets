@@ -2,19 +2,31 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "display": "Deno",
 
+  "name": "@wormblossom/macromania-assets",
+  "version": "1.0.0",
+  "exports": "./mod.tsx",
+
   "imports": {
-    "macromaniajsx/jsx-dev-runtime": "./deps.ts",
-    "macromaniajsx/jsx-runtime": "./deps.ts"
+    "macromania": "jsr:@wormblossom/macromania",
+    "@aljoscha-meyer/simple-fs-abstraction": "../simple_fs_abstraction/mod.ts",
+    "macromania-fs": "jsr:@wormblossom/macromania-fs",
+    "@std/assert": "jsr:@std/assert@^0.221.0"
   },
+
+  "patch": [
+    "../macromania",
+    "../macromania_fs",
+    "../simple_fs_abstraction"
+  ],
 
   "compilerOptions": {
     "jsx": "react-jsxdev",
-    "jsxImportSource": "macromaniajsx",
+    "jsxImportSource": "macromania",
     "lib": ["deno.ns", "dom"],
     "strict": true
   },
 
   "tasks": {
-    "test": "cd test; deno test -A tests.tsx"
+    "test": "deno test test/tests.tsx"
   }
 }
