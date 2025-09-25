@@ -1,12 +1,26 @@
 import * as denoPath from "jsr:@std/path";
 
-import { Context } from "macromania";
+import { Context, LogLevel } from "macromania";
 import { Path, type Pathish } from "@aljoscha-meyer/simple-fs-abstraction";
 
 /**
  * Specifies which asset transformations to apply. Roughly speaking, the `Pathish`s specify the input file to the transformation pipeline, and Pathishs which point to directories are recursively applied to all contents, unless there exists a more specific pair specifying a transformation for that content.
  */
-export type Transformations = Array<[Pathish, TransformationPipeline]>;
+export type Transformations = Array<
+  [Pathish, TransformationPipeline] | [
+    Pathish,
+    TransformationPipeline,
+    LogLevel,
+  ]
+>;
+
+type NormalisedTransformations = Array<TransformationSpec>;
+
+type TransformationSpec = {
+  path: Path;
+  pipeline: Array<Transformation>;
+  unused: LogLevel;
+};
 
 /**
  * Describes how to convert a single input asset file (always a leaf file, never a directory) into (at most) a single output file.
@@ -86,49 +100,114 @@ function parseAssetPathish(ctx: Context, p: Pathish): Path | null {
   }
 }
 
+type RegistrationInformationCollector = {
+  /**
+   * Remove from this set every asset Path.toString() for which we found a directory or leaf file.
+   */
+  remainingUnusedTransformations: Set<string>;
+  /**
+   * Add to this map keyed by Path.toString() for every leaf file we transformed successfully (i.e., the pipeline did not return null).
+   */
+  successfulTransformations: Map<string, ProcessedTransformation>;
+};
+
 /**
  * Returns `true` if things worked, `false` if evaluation had to halt.
  */
 async function runTransformations(
   ctx: Context,
-  transformations: Transformations,
+  transformations: NormalisedTransformations,
   tmpDir: string,
+  unusedTransformationLoggingLevel: LogLevel,
 ): Promise<boolean> {
-  const trie = buildTransformationsTrie(ctx, transformations);
+  const trie = buildTransformationsTrie(transformations);
 
   if (trie === null) {
     return false;
   }
 
-  return await trie.runTransformationsOnKnownDirectory(
-    ctx,
-    Path.absolute([]),
-    tmpDir,
-  );
+  // Create a set of all explicitly specified transformations.
+  // This set is passed to the funciton running the transformations, and in running them,
+  // all paths which were found in the filesystem are removed.
+  // We later check if all of them were removed.
+  const remainingUnusedTransformations: Set<string> = new Set();
+
+  for (const { path } of transformations) {
+    remainingUnusedTransformations.add(
+      // Parsing failures already caught when creating the trie.
+      path.toString(),
+    );
+  }
+
+  const collector = {
+    remainingUnusedTransformations,
+    successfulTransformations: new Map(),
+  };
+
+  if (
+    !await trie.runTransformationsOnKnownDirectory(
+      ctx,
+      Path.absolute([]),
+      tmpDir,
+      collector,
+    )
+  ) {
+    return false;
+  }
+
+  // Log warnings if there are unused transformations.
+  const plural = remainingUnusedTransformations.size > 1;
+  if (remainingUnusedTransformations.size > 0) {
+    ctx.log(
+      unusedTransformationLoggingLevel,
+      `Specified ${plural ? "some" : "an"} asset transformation${
+        plural ? "s" : ""
+      } for which the asset input directory did not contain any file${
+        plural ? "s" : ""
+      } or director${plural ? "ies" : "y"}:`,
+    );
+  }
+  ctx.loggingGroup(() => {
+    for (const unused of remainingUnusedTransformations.entries()) {
+      ctx.log(unusedTransformationLoggingLevel, unused);
+    }
+  });
+
+  if (remainingUnusedTransformations.size > 0) {
+    ctx.currentLog(unusedTransformationLoggingLevel);
+    ctx.logEmptyLine(unusedTransformationLoggingLevel);
+    ctx.log(
+      unusedTransformationLoggingLevel,
+      `To remove the preceding warning${plural ? "s" : ""} about ${
+        plural ? "" : "an"
+      } unused asset transformation${plural ? "s" : ""}, set the ${
+        ctx.fmtCode("unusedTransformations")
+      } prop of the ${ctx.fmtCode("Assets")} macro to, e.g., ${
+        ctx.fmtCode("ignore")
+      }.`,
+    );
+
+    if (unusedTransformationLoggingLevel === "error") {
+      ctx.halt();
+      return Promise.resolve(false);
+    }
+  }
+
+  return Promise.resolve(true);
 }
 
 /**
  * Build up a trie describing the Transformations. Returns its root, or `null` if an error occured (for example, an invalid Pathish).
  */
 function buildTransformationsTrie(
-  ctx: Context,
-  transformations: Transformations,
+  transformations: NormalisedTransformations,
 ): TrieNode | null {
-  const defaultPipeline = ASSET_COPY;
-  const trieRoot = new TrieNode(defaultPipeline);
-
-  const parsed: Array<[Path, TransformationPipeline]> = [];
-  for (const [pathish, pipeline] of transformations) {
-    const p = parseAssetPathish(ctx, pathish);
-    if (p === null) {
-      return null;
-    } else {
-      parsed.push([p, pipeline]);
-    }
-  }
+  const defaultPipeline = [ASSET_COPY];
+  const defaultUnused = "warn";
+  const trieRoot = new TrieNode(defaultPipeline, defaultUnused);
 
   // Sort by component count, keeping the old ordering in case of ties (tiebreaker is pretty arbitrary, the important part is to process prefixes before their extensions later).
-  parsed.sort(([p1, _pipeline1], [p2, _pipeline2]) => {
+  transformations.sort(({ path: p1 }, { path: p2 }) => {
     if (p1.getComponentCount() !== p2.getComponentCount()) {
       return p1.getComponentCount() - p2.getComponentCount();
     } else {
@@ -136,27 +215,25 @@ function buildTransformationsTrie(
     }
   });
 
-  for (const [pathish, pipeline] of parsed) {
-    const p = parseAssetPathish(ctx, pathish);
-    if (p === null) {
-      return null;
-    }
-
-    const componentCount = p.getComponentCount();
+  for (const { path, pipeline, unused } of transformations) {
+    const componentCount = path.getComponentCount();
 
     if (componentCount === 0) {
       trieRoot.pipeline = pipeline;
     } else {
       let node = trieRoot;
       let prevPipeline = trieRoot.pipeline;
+      let prevUnused = trieRoot.unused;
 
       for (let i = 0; i < componentCount; i++) {
         node = node.getOrCreateChild(
-          p.getIthComponent(i)!,
+          path.getIthComponent(i)!,
           i === componentCount - 1 ? pipeline : prevPipeline,
+          i === componentCount - 1 ? unused : prevUnused,
         );
 
         prevPipeline = node.pipeline;
+        prevUnused = node.unused;
       }
     }
   }
@@ -171,14 +248,16 @@ class TrieNode {
   /**
    * The pipeline to apply to everything in this directory (unless a more specific trie node overrides that pipeline).
    */
-  pipeline: TransformationPipeline;
+  pipeline: Array<Transformation>;
+  unused: LogLevel;
   /**
    * Keys are single path components.
    */
   children: Map<string, TrieNode>;
 
-  constructor(pipeline: TransformationPipeline) {
+  constructor(pipeline: Array<Transformation>, unused: LogLevel) {
     this.pipeline = pipeline;
+    this.unused = unused;
     this.children = new Map();
   }
 
@@ -187,13 +266,15 @@ class TrieNode {
    */
   getOrCreateChild(
     component: string,
-    pipeline: TransformationPipeline,
+    pipeline: Array<Transformation>,
+    unused: LogLevel,
   ): TrieNode {
     const child = this.children.get(component);
 
     if (child === undefined) {
       const newChild = new TrieNode(
         pipeline,
+        unused,
       );
       this.children.set(component, newChild);
       return newChild;
@@ -210,7 +291,10 @@ class TrieNode {
     ctx: Context,
     assetPath: Path,
     currentPath: string,
+    collector: RegistrationInformationCollector,
   ): Promise<boolean> {
+    collector.remainingUnusedTransformations.delete(assetPath.toString());
+
     try {
       for await (const dirEntry of Deno.readDir(currentPath)) {
         const nativePath = denoPath.join(currentPath, dirEntry.name);
@@ -226,6 +310,8 @@ class TrieNode {
                 newAssetPath,
                 nativePath,
                 this.pipeline,
+                this.unused,
+                collector,
               )
             ) {
               return Promise.resolve(false);
@@ -236,7 +322,9 @@ class TrieNode {
                 ctx,
                 newAssetPath,
                 this.pipeline,
+                this.unused,
                 nativePath,
+                collector,
               )
             ) {
               return Promise.resolve(false);
@@ -256,6 +344,7 @@ class TrieNode {
                 ctx,
                 newAssetPath,
                 nativePath,
+                collector,
               )
             ) {
               return Promise.resolve(false);
@@ -266,7 +355,9 @@ class TrieNode {
                 ctx,
                 newAssetPath,
                 this.pipeline,
+                this.unused,
                 nativePath,
+                collector,
               )
             ) {
               return Promise.resolve(false);
@@ -304,7 +395,9 @@ async function runTransformationsOnUnknownDirectory(
   ctx: Context,
   assetPath: Path,
   currentPath: string,
-  pipeline: TransformationPipeline,
+  pipeline: Array<Transformation>,
+  unused: LogLevel,
+  collector: RegistrationInformationCollector,
 ): Promise<boolean> {
   try {
     for await (const dirEntry of Deno.readDir(currentPath)) {
@@ -318,6 +411,8 @@ async function runTransformationsOnUnknownDirectory(
             newAssetPath,
             nativePath,
             pipeline,
+            unused,
+            collector,
           )
         ) {
           return Promise.resolve(false);
@@ -328,7 +423,9 @@ async function runTransformationsOnUnknownDirectory(
             ctx,
             newAssetPath,
             pipeline,
+            unused,
             nativePath,
+            collector,
           )
         ) {
           return Promise.resolve(false);
@@ -359,12 +456,13 @@ async function runTransformationsOnUnknownDirectory(
 async function applyPipelineToLeafFile(
   ctx: Context,
   assetPath: Path,
-  pipeline_: TransformationPipeline,
+  pipeline: Array<Transformation>,
+  unused: LogLevel,
   path_: string,
+  collector: RegistrationInformationCollector,
 ): Promise<boolean> {
-  const pipeline: Array<Transformation> = Array.isArray(pipeline_)
-    ? pipeline_
-    : [pipeline_];
+  const assetPathToString = assetPath.toString();
+  collector.remainingUnusedTransformations.delete(assetPathToString);
 
   let path: string | null = path_;
 
@@ -384,19 +482,24 @@ async function applyPipelineToLeafFile(
     }
   }
 
-  registerSuccessfulTransformation(ctx, assetPath, path);
+  collector.successfulTransformations.set(assetPathToString, {
+    unused: unused,
+    tempLocation: path!,
+    // Setting this to a proper value elsewhere, when copying from the temp dir to the output dir.
+    outputPath: Path.absolute([]),
+  });
 
   return Promise.resolve(true);
 }
 
-/**
- * @param assetPath an absolute `Path` (root is the asset input dir)
- * @param outputPath an absolute platform-specific path (root is the root of the file system)
- */
-function registerSuccessfulTransformation(
-  ctx: Context,
-  assetPath: Path,
-  outputPath: string,
-) {
-  TODO;
-}
+type ProcessedTransformation = {
+  unused: LogLevel;
+  /**
+   * The absolute, platform-specific path in the temp dir where the output was placed by the pipeline.
+   */
+  tempLocation: string;
+  /**
+   * The location in the simple_fs where the transformed asset is to be placed.
+   */
+  outputPath: Path;
+};
