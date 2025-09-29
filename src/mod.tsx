@@ -1,7 +1,113 @@
 import * as denoPath from "jsr:@std/path";
 
-import { Context, LogLevel } from "macromania";
+import { Children, Context, Expression, LogLevel } from "macromania";
 import { Path, type Pathish } from "@aljoscha-meyer/simple-fs-abstraction";
+
+export type AssetProps = {
+  /**
+   * The transformation to apply to the assets.
+   */
+  transformations: Transformations;
+  /**
+   * The default logging level at which to log assets which are not referenced anywhere.
+   */
+  orphanAssetLoggingLevel: LogLevel;
+  /**
+   * The logging level at which to report transformations for which no input file exists.
+   */
+  noInputLoggingLevel: LogLevel;
+  children: Children;
+};
+
+type AssetsState = {
+  allTransformations: Map<string, ProcessedTransformation>;
+  remainingOrphans: Map<string, ProcessedTransformation>;
+};
+
+const [AssetsScope, assetsGet, assetsSet] = Context.createScopedState<
+  AssetsState
+>(
+  () => ({
+    allTransformations: new Map(),
+    remainingOrphans: new Map(),
+  }),
+);
+
+export function Assets(
+  { transformations, orphanAssetLoggingLevel, noInputLoggingLevel, children }:
+    AssetProps,
+): Expression {
+  return (
+    <map
+      fun={(ctx, _) => {
+        // This runs after all children have been evaluated. Logs orphans, i.e., assets which are not referenced within the evaluated children.
+
+        let finalOrphanPath = "";
+        for (const [path, { unused }] of assetsGet(ctx).remainingOrphans) {
+          finalOrphanPath = path;
+          ctx.log(
+            unused,
+            `Declared an asset which was not referenced at all: ${path}`,
+          );
+          ctx.currentLog(orphanAssetLoggingLevel);
+
+          if (unused === "error") {
+            return ctx.halt();
+          }
+        }
+
+        ctx.log(
+          orphanAssetLoggingLevel,
+          `To set the default logging level for orphan assets, use the ${
+            ctx.fmtCode("orphanAssetLoggingLevel")
+          } prop of the ${ctx.fmtCode("Assets")} macro, for example, ${
+            ctx.fmtCode(`orphanAssetLoggingLevel="ignore"`)
+          }`,
+        );
+
+        if (orphanAssetLoggingLevel === "error" && finalOrphanPath !== "") {
+          return ctx.halt();
+        }
+
+        return "";
+      }}
+    >
+      <effect
+        fun={async (ctx) => {
+          const tmpDir = createAssetsTmpDir();
+
+          const normalisedTransformations = normaliseTransformations(
+            ctx,
+            transformations,
+            orphanAssetLoggingLevel,
+          );
+
+          if (normalisedTransformations === null) {
+            return "";
+          }
+
+          const transformationResult = await runTransformations(
+            ctx,
+            normalisedTransformations,
+            tmpDir,
+            noInputLoggingLevel,
+          );
+
+          if (transformationResult === null) {
+            return null;
+          } else {
+            moveOutOfTmpDirAndDeleteTmpDir();
+
+            TODO(); // Set the `outputPath` of all the transformationResult-s.
+            // Set state.allTransformations and state.remainingOrphans.
+          }
+
+          return <AssetsScope>{children}</AssetsScope>;
+        }}
+      />
+    </map>
+  );
+}
 
 /**
  * Specifies which asset transformations to apply. Roughly speaking, the `Pathish`s specify the input file to the transformation pipeline, and Pathishs which point to directories are recursively applied to all contents, unless there exists a more specific pair specifying a transformation for that content.
@@ -15,6 +121,30 @@ export type Transformations = Array<
 >;
 
 type NormalisedTransformations = Array<TransformationSpec>;
+
+function normaliseTransformations(
+  ctx: Context,
+  transformations: Transformations,
+  defaultUnused: LogLevel,
+): NormalisedTransformations | null {
+  const ret: NormalisedTransformations = [];
+
+  for (const t of transformations) {
+    const path = parseAssetPathish(ctx, t[0]);
+
+    if (path === null) {
+      return null;
+    } else {
+      ret.push({
+        path,
+        pipeline: Array.isArray(t[1]) ? t[1] : [t[1]],
+        unused: t.length === 2 ? defaultUnused : t[2],
+      });
+    }
+  }
+
+  return ret;
+}
 
 type TransformationSpec = {
   path: Path;
@@ -112,18 +242,18 @@ type RegistrationInformationCollector = {
 };
 
 /**
- * Returns `true` if things worked, `false` if evaluation had to halt.
+ * Returns a filled-out `RegistrationInformationCollector` if things worked, `null` if evaluation had to halt.
  */
 async function runTransformations(
   ctx: Context,
   transformations: NormalisedTransformations,
   tmpDir: string,
   unusedTransformationLoggingLevel: LogLevel,
-): Promise<boolean> {
+): Promise<RegistrationInformationCollector | null> {
   const trie = buildTransformationsTrie(transformations);
 
   if (trie === null) {
-    return false;
+    return null;
   }
 
   // Create a set of all explicitly specified transformations.
@@ -152,7 +282,7 @@ async function runTransformations(
       collector,
     )
   ) {
-    return false;
+    return null;
   }
 
   // Log warnings if there are unused transformations.
@@ -189,11 +319,11 @@ async function runTransformations(
 
     if (unusedTransformationLoggingLevel === "error") {
       ctx.halt();
-      return Promise.resolve(false);
+      return Promise.resolve(null);
     }
   }
 
-  return Promise.resolve(true);
+  return Promise.resolve(collector);
 }
 
 /**
