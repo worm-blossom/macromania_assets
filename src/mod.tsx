@@ -1,4 +1,5 @@
 import * as denoPath from "jsr:@std/path";
+import { copy, emptyDir } from "@std/fs";
 
 import { Children, Context, Expression, LogLevel } from "macromania";
 import { Path, type Pathish } from "@aljoscha-meyer/simple-fs-abstraction";
@@ -11,12 +12,25 @@ export type AssetProps = {
   /**
    * The default logging level at which to log assets which are not referenced anywhere.
    */
-  orphanAssetLoggingLevel: LogLevel;
+  orphanAssetLoggingLevel?: LogLevel;
   /**
    * The logging level at which to report transformations for which no input file exists.
    */
-  noInputLoggingLevel: LogLevel;
-  children: Children;
+  noInputLoggingLevel?: LogLevel;
+  /**
+   * The path to the temporary directory (a platform-specific path, either absolute or relative to the current working directory) which the `Assets` macro creates to perform asset transformations.
+   *
+   * Defaults to `./.tmpAssetManipulation`.
+   */
+  tmpDir?: string;
+  /**
+   * The path to the directory containing the assets (a platform-specific path, either absolute or relative to the current working directory).
+   */
+  input: string;
+  /**
+   * The `Assets` macro evaluates to its children.
+   */
+  children?: Children;
 };
 
 type AssetsState = {
@@ -34,9 +48,17 @@ const [AssetsScope, assetsGet, assetsSet] = Context.createScopedState<
 );
 
 export function Assets(
-  { transformations, orphanAssetLoggingLevel, noInputLoggingLevel, children }:
-    AssetProps,
+  {
+    transformations,
+    orphanAssetLoggingLevel,
+    noInputLoggingLevel,
+    tmpDir: tmpDir_,
+    input,
+    children,
+  }: AssetProps,
 ): Expression {
+  const DEFAULT_LOG_ORPHANS = "warn";
+
   return (
     <map
       fun={(ctx, _) => {
@@ -49,7 +71,11 @@ export function Assets(
             unused,
             `Declared an asset which was not referenced at all: ${path}`,
           );
-          ctx.currentLog(orphanAssetLoggingLevel);
+          ctx.currentLog(
+            orphanAssetLoggingLevel === undefined
+              ? DEFAULT_LOG_ORPHANS
+              : orphanAssetLoggingLevel,
+          );
 
           if (unused === "error") {
             return ctx.halt();
@@ -57,7 +83,9 @@ export function Assets(
         }
 
         ctx.log(
-          orphanAssetLoggingLevel,
+          orphanAssetLoggingLevel === undefined
+            ? DEFAULT_LOG_ORPHANS
+            : orphanAssetLoggingLevel,
           `To set the default logging level for orphan assets, use the ${
             ctx.fmtCode("orphanAssetLoggingLevel")
           } prop of the ${ctx.fmtCode("Assets")} macro, for example, ${
@@ -74,35 +102,116 @@ export function Assets(
     >
       <effect
         fun={async (ctx) => {
-          const tmpDir = createAssetsTmpDir();
+          const tmpDir = tmpDir_ === undefined
+            ? "tmpAssetManipulation"
+            : tmpDir_;
 
-          const normalisedTransformations = normaliseTransformations(
-            ctx,
-            transformations,
-            orphanAssetLoggingLevel,
-          );
+          try {
+            const oldWorkingDirectory = Deno.cwd();
 
-          if (normalisedTransformations === null) {
-            return "";
+            try {
+              await emptyDir(tmpDir);
+            } catch (err) {
+              ctx.error(
+                `Tried but failed to create and/or empty a temporary directory for processing asset transformations at ${
+                  ctx.fmtFilePath(tmpDir)
+                }`,
+              );
+              ctx.error(
+                `See the ${ctx.fmtCode(tmpDir)} prop of the ${
+                  ctx.fmtCode("Assets")
+                } macro for setting this path.`,
+              );
+              ctx.error("The file system error:");
+              ctx.error(err);
+              ctx.currentError();
+              return ctx.halt();
+            }
+
+            try {
+              await copy(input, tmpDir, {
+                overwrite: true,
+                preserveTimestamps: true,
+              });
+            } catch (err) {
+              ctx.error(
+                `Tried but failed to copy all assets into the temporary asset processing directory at ${
+                  ctx.fmtFilePath(tmpDir)
+                }`,
+              );
+              ctx.error(
+                `See the ${ctx.fmtCode(tmpDir)} prop of the ${
+                  ctx.fmtCode("Assets")
+                } macro for setting this path.`,
+              );
+              ctx.error("The file system error:");
+              ctx.error(err);
+              ctx.currentError();
+              return ctx.halt();
+            }
+
+            try {
+              Deno.chdir(tmpDir);
+            } catch (err) {
+              ctx.error(
+                `Tried but failed to ${
+                  ctx.fmtCode("cd")
+                } into the temporary directory for processing asset transformations at ${
+                  ctx.fmtFilePath(tmpDir)
+                }`,
+              );
+              ctx.error(
+                `See the ${ctx.fmtCode(tmpDir)} prop of the ${
+                  ctx.fmtCode("Assets")
+                } macro for setting this path.`,
+              );
+              ctx.error("The file system error:");
+              ctx.error(err);
+              ctx.currentError();
+              return ctx.halt();
+            }
+
+            const normalisedTransformations = normaliseTransformations(
+              ctx,
+              transformations,
+              orphanAssetLoggingLevel === undefined
+                ? DEFAULT_LOG_ORPHANS
+                : orphanAssetLoggingLevel,
+            );
+
+            if (normalisedTransformations === null) {
+              return "";
+            }
+
+            const transformationResult = await runTransformations(
+              ctx,
+              normalisedTransformations,
+              tmpDir,
+              noInputLoggingLevel === undefined ? "warn" : noInputLoggingLevel,
+            );
+
+            if (transformationResult === null) {
+              return null;
+            } else {
+              moveOutOfTmpDirAndDeleteTmpDir();
+
+              TODO(); // Set the `outputPath` of all the transformationResult-s.
+              // Set state.allTransformations and state.remainingOrphans.
+
+              Deno.chdir(oldWorkingDirectory);
+            }
+
+            return <AssetsScope>{children}</AssetsScope>;
+          } catch (err) {
+            ctx.error(
+              `The ${
+                ctx.fmtCode("Assets")
+              } macro requires determining the current working directory of the process, but this failed:`,
+            );
+            ctx.error(err);
+            ctx.currentError();
+            return ctx.halt();
           }
-
-          const transformationResult = await runTransformations(
-            ctx,
-            normalisedTransformations,
-            tmpDir,
-            noInputLoggingLevel,
-          );
-
-          if (transformationResult === null) {
-            return null;
-          } else {
-            moveOutOfTmpDirAndDeleteTmpDir();
-
-            TODO(); // Set the `outputPath` of all the transformationResult-s.
-            // Set state.allTransformations and state.remainingOrphans.
-          }
-
-          return <AssetsScope>{children}</AssetsScope>;
         }}
       />
     </map>
