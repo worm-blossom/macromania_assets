@@ -24,7 +24,6 @@
       "jsr:@std/assert@0.221",
       "jsr:@std/fs@^1.0.18",
       "jsr:@std/path@^1.1.0",
-      "jsr:@wormblossom/macromania-fs@*",
       "jsr:@wormblossom/macromania@*"
     ]
   }

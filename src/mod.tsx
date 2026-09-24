@@ -2,7 +2,9 @@ import * as denoPath from "jsr:@std/path";
 import { copy, emptyDir } from "@std/fs";
 
 import { Children, Context, Expression, LogLevel } from "macromania";
-import { Path, type Pathish } from "@aljoscha-meyer/simple-fs-abstraction";
+import { Path, type Pathish } from "@wormblossom/simple-fs-abstraction";
+import { SimpleFsDeno } from "@wormblossom/simple-fs-deno";
+import { getFs } from "@wormblossom/macromania-fs";
 
 export type AssetProps = {
   /**
@@ -193,10 +195,17 @@ export function Assets(
             if (transformationResult === null) {
               return null;
             } else {
+              // Done transforming. Now write the results at the correct location in the macromania_fs.
+              const denoFs = getFs(ctx);
+              const mount = (denoFs as unknown as SimpleFsDeno).getMount();
+
               moveOutOfTmpDirAndDeleteTmpDir();
 
-              TODO(); // Set the `outputPath` of all the transformationResult-s.
+              // Files have been moved to the correct positions. Finally, update some state:
+
+              // Set the `outputPath` of all the transformationResult-s.
               // Set state.allTransformations and state.remainingOrphans.
+              TODO();
 
               Deno.chdir(oldWorkingDirectory);
             }
