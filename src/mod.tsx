@@ -1,5 +1,5 @@
 import * as denoPath from "jsr:@std/path";
-import { copy, emptyDir } from "@std/fs";
+import { copy, emptyDir, move } from "@std/fs";
 
 import { Children, Context, Expression, LogLevel } from "macromania";
 import { Path, type Pathish } from "@wormblossom/simple-fs-abstraction";
@@ -30,6 +30,10 @@ export type AssetProps = {
    */
   input: string;
   /**
+   * The path in the macromania-fs where to place the transformed assets.
+   */
+  output: Pathish;
+  /**
    * The `Assets` macro evaluates to its children.
    */
   children?: Children;
@@ -56,10 +60,13 @@ export function Assets(
     noInputLoggingLevel,
     tmpDir: tmpDir_,
     input,
+    output,
     children,
   }: AssetProps,
 ): Expression {
   const DEFAULT_LOG_ORPHANS = "warn";
+
+  const output_ = Path.fromPathish(output);
 
   return (
     <map
@@ -120,7 +127,7 @@ export function Assets(
                 }`,
               );
               ctx.error(
-                `See the ${ctx.fmtCode(tmpDir)} prop of the ${
+                `See the ${ctx.fmtCode("tmpDir")} prop of the ${
                   ctx.fmtCode("Assets")
                 } macro for setting this path.`,
               );
@@ -142,7 +149,7 @@ export function Assets(
                 }`,
               );
               ctx.error(
-                `See the ${ctx.fmtCode(tmpDir)} prop of the ${
+                `See the ${ctx.fmtCode("tmpDir")} prop of the ${
                   ctx.fmtCode("Assets")
                 } macro for setting this path.`,
               );
@@ -163,7 +170,7 @@ export function Assets(
                 }`,
               );
               ctx.error(
-                `See the ${ctx.fmtCode(tmpDir)} prop of the ${
+                `See the ${ctx.fmtCode("tmpDir")} prop of the ${
                   ctx.fmtCode("Assets")
                 } macro for setting this path.`,
               );
@@ -197,17 +204,94 @@ export function Assets(
             } else {
               // Done transforming. Now write the results at the correct location in the macromania_fs.
               const denoFs = getFs(ctx);
-              const mount = (denoFs as unknown as SimpleFsDeno).getMount();
 
-              moveOutOfTmpDirAndDeleteTmpDir();
+              if (!(denoFs instanceof SimpleFsDeno)) {
+                ctx.error(
+                  `The ${
+                    ctx.fmtCode("<Assets>")
+                  } macro ca only be used together with the ${
+                    ctx.fmtCode("macromania-fs")
+                  } package, specifically with the ${
+                    ctx.fmtCode("simple-fs-deno")
+                  } backend.`,
+                );
+                ctx.currentError();
+                return ctx.halt();
+              }
+
+              const mount = denoFs.getMount();
+              const physicalOutput = denoPath.join(mount, output_.toString());
+
+              // Create the output directory.
+              try {
+                await emptyDir(physicalOutput);
+              } catch (err) {
+                ctx.error(
+                  `Tried but failed to create and/or empty an asset output directory at ${
+                    ctx.fmtFilePath(physicalOutput)
+                  }`,
+                );
+                ctx.error(
+                  `See the ${ctx.fmtCode("output")} prop of the ${
+                    ctx.fmtCode("Assets")
+                  } macro for setting this path.`,
+                );
+                ctx.error("The file system error:");
+                ctx.error(err);
+                ctx.currentError();
+                return ctx.halt();
+              }
+
+              // Reset working directory.
+              Deno.chdir(oldWorkingDirectory);
+
+              // Move files from the tmpDir to the output directory.
+              try {
+                await move(tmpDir, physicalOutput, {
+                  overwrite: true,
+                });
+              } catch (err) {
+                ctx.error(
+                  `Tried but failed to move all assets from the temporary asset processing directory at ${
+                    ctx.fmtFilePath(tmpDir)
+                  } to the output directory at ${
+                    ctx.fmtFilePath(physicalOutput)
+                  }`,
+                );
+                ctx.error(
+                  `See the ${ctx.fmtCode("output")} prop of the ${
+                    ctx.fmtCode("Assets")
+                  } macro for setting the output path.`,
+                );
+                ctx.error("The file system error:");
+                ctx.error(err);
+                ctx.currentError();
+                return ctx.halt();
+              }
 
               // Files have been moved to the correct positions. Finally, update some state:
 
-              // Set the `outputPath` of all the transformationResult-s.
-              // Set state.allTransformations and state.remainingOrphans.
-              TODO();
+              const state = assetsGet(ctx);
+              for (
+                const [path, transformation] of transformationResult
+                  .successfulTransformations.entries()
+              ) {
+                // Set the `outputPath` of all the transformationResult-s.
+                // We know that the physicalOutput path starts with the mount point of the macromania-fs, and removing that prefix yields
+                // the (physical) path inside the macromania-fs of the output directory.
+                transformation.outputPath = Path.fromPathish(
+                  denoPath.join(output.toString(), transformation.tempLocation),
+                );
 
-              Deno.chdir(oldWorkingDirectory);
+                // Add the transformation to state.allTransformations.
+                state.allTransformations.set(path, transformation);
+
+                // And remove it from state.remainingOrphans.
+                state.remainingOrphans.delete(path);
+              }
+
+              // Delete the tmpDir.
+              Deno.remove(tmpDir, { recursive: true });
             }
 
             return <AssetsScope>{children}</AssetsScope>;
