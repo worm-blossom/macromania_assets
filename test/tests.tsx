@@ -14,17 +14,4 @@ const exp = (
   </ConfigFs>
 );
 
-// /**
-//  * The transformation to apply to the assets.
-//  */
-// transformations: Transformations;
-// /**
-//  * The path to the directory containing the assets (a platform-specific path, either absolute or relative to the current working directory).
-//  */
-// input: string;
-// /**
-//  * The path in the macromania-fs where to place the transformed assets.
-//  */
-// output: Pathish;
-
 await evaluate(exp);

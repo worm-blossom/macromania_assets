@@ -4,7 +4,7 @@ import { copy, emptyDir, move } from "@std/fs";
 import { Children, Context, Expression, LogLevel } from "macromania";
 import { Path, type Pathish } from "@wormblossom/simple-fs-abstraction";
 import { SimpleFsDeno } from "@wormblossom/simple-fs-deno";
-import { getFs } from "@wormblossom/macromania-fs";
+import { getFs, pwd } from "@wormblossom/macromania-fs";
 
 export type AssetProps = {
   /**
@@ -91,19 +91,21 @@ export function Assets(
           }
         }
 
-        ctx.log(
-          orphanAssetLoggingLevel === undefined
-            ? DEFAULT_LOG_ORPHANS
-            : orphanAssetLoggingLevel,
-          `To set the default logging level for orphan assets, use the ${
-            ctx.fmtCode("orphanAssetLoggingLevel")
-          } prop of the ${ctx.fmtCode("Assets")} macro, for example, ${
-            ctx.fmtCode(`orphanAssetLoggingLevel="ignore"`)
-          }`,
-        );
+        if (assetsGet(ctx).remainingOrphans.size > 0) {
+          ctx.log(
+            orphanAssetLoggingLevel === undefined
+              ? DEFAULT_LOG_ORPHANS
+              : orphanAssetLoggingLevel,
+            `To set the default logging level for orphan assets, use the ${
+              ctx.fmtCode("orphanAssetLoggingLevel")
+            } prop of the ${ctx.fmtCode("Assets")} macro, for example, ${
+              ctx.fmtCode(`orphanAssetLoggingLevel="ignore"`)
+            }`,
+          );
 
-        if (orphanAssetLoggingLevel === "error" && finalOrphanPath !== "") {
-          return ctx.halt();
+          if (orphanAssetLoggingLevel === "error" && finalOrphanPath !== "") {
+            return ctx.halt();
+          }
         }
 
         return "";
@@ -115,186 +117,9 @@ export function Assets(
             ? "tmpAssetManipulation"
             : tmpDir_;
 
+          let oldWorkingDirectory = "";
           try {
-            const oldWorkingDirectory = Deno.cwd();
-
-            try {
-              await emptyDir(tmpDir);
-            } catch (err) {
-              ctx.error(
-                `Tried but failed to create and/or empty a temporary directory for processing asset transformations at ${
-                  ctx.fmtFilePath(tmpDir)
-                }`,
-              );
-              ctx.error(
-                `See the ${ctx.fmtCode("tmpDir")} prop of the ${
-                  ctx.fmtCode("Assets")
-                } macro for setting this path.`,
-              );
-              ctx.error("The file system error:");
-              ctx.error(err);
-              ctx.currentError();
-              return ctx.halt();
-            }
-
-            try {
-              await copy(input, tmpDir, {
-                overwrite: true,
-                preserveTimestamps: true,
-              });
-            } catch (err) {
-              ctx.error(
-                `Tried but failed to copy all assets into the temporary asset processing directory at ${
-                  ctx.fmtFilePath(tmpDir)
-                }`,
-              );
-              ctx.error(
-                `See the ${ctx.fmtCode("tmpDir")} prop of the ${
-                  ctx.fmtCode("Assets")
-                } macro for setting this path.`,
-              );
-              ctx.error("The file system error:");
-              ctx.error(err);
-              ctx.currentError();
-              return ctx.halt();
-            }
-
-            try {
-              Deno.chdir(tmpDir);
-            } catch (err) {
-              ctx.error(
-                `Tried but failed to ${
-                  ctx.fmtCode("cd")
-                } into the temporary directory for processing asset transformations at ${
-                  ctx.fmtFilePath(tmpDir)
-                }`,
-              );
-              ctx.error(
-                `See the ${ctx.fmtCode("tmpDir")} prop of the ${
-                  ctx.fmtCode("Assets")
-                } macro for setting this path.`,
-              );
-              ctx.error("The file system error:");
-              ctx.error(err);
-              ctx.currentError();
-              return ctx.halt();
-            }
-
-            const normalisedTransformations = normaliseTransformations(
-              ctx,
-              transformations,
-              orphanAssetLoggingLevel === undefined
-                ? DEFAULT_LOG_ORPHANS
-                : orphanAssetLoggingLevel,
-            );
-
-            if (normalisedTransformations === null) {
-              return "";
-            }
-
-            const transformationResult = await runTransformations(
-              ctx,
-              normalisedTransformations,
-              tmpDir,
-              noInputLoggingLevel === undefined ? "warn" : noInputLoggingLevel,
-            );
-
-            if (transformationResult === null) {
-              return null;
-            } else {
-              // Done transforming. Now write the results at the correct location in the macromania_fs.
-              const denoFs = getFs(ctx);
-
-              if (!(denoFs instanceof SimpleFsDeno)) {
-                ctx.error(
-                  `The ${
-                    ctx.fmtCode("<Assets>")
-                  } macro ca only be used together with the ${
-                    ctx.fmtCode("macromania-fs")
-                  } package, specifically with the ${
-                    ctx.fmtCode("simple-fs-deno")
-                  } backend.`,
-                );
-                ctx.currentError();
-                return ctx.halt();
-              }
-
-              const mount = denoFs.getMount();
-              const physicalOutput = denoPath.join(mount, output_.toString());
-
-              // Create the output directory.
-              try {
-                await emptyDir(physicalOutput);
-              } catch (err) {
-                ctx.error(
-                  `Tried but failed to create and/or empty an asset output directory at ${
-                    ctx.fmtFilePath(physicalOutput)
-                  }`,
-                );
-                ctx.error(
-                  `See the ${ctx.fmtCode("output")} prop of the ${
-                    ctx.fmtCode("Assets")
-                  } macro for setting this path.`,
-                );
-                ctx.error("The file system error:");
-                ctx.error(err);
-                ctx.currentError();
-                return ctx.halt();
-              }
-
-              // Reset working directory.
-              Deno.chdir(oldWorkingDirectory);
-
-              // Move files from the tmpDir to the output directory.
-              try {
-                await move(tmpDir, physicalOutput, {
-                  overwrite: true,
-                });
-              } catch (err) {
-                ctx.error(
-                  `Tried but failed to move all assets from the temporary asset processing directory at ${
-                    ctx.fmtFilePath(tmpDir)
-                  } to the output directory at ${
-                    ctx.fmtFilePath(physicalOutput)
-                  }`,
-                );
-                ctx.error(
-                  `See the ${ctx.fmtCode("output")} prop of the ${
-                    ctx.fmtCode("Assets")
-                  } macro for setting the output path.`,
-                );
-                ctx.error("The file system error:");
-                ctx.error(err);
-                ctx.currentError();
-                return ctx.halt();
-              }
-
-              // Files have been moved to the correct positions. Finally, update some state:
-
-              const state = assetsGet(ctx);
-              for (
-                const [path, transformation] of transformationResult
-                  .successfulTransformations.entries()
-              ) {
-                // Set the `outputPath` of all the transformationResult-s.
-                // We know that the physicalOutput path starts with the mount point of the macromania-fs, and removing that prefix yields
-                // the (physical) path inside the macromania-fs of the output directory.
-                transformation.outputPath = Path.fromPathish(
-                  denoPath.join(output.toString(), transformation.tempLocation),
-                );
-
-                // Add the transformation to state.allTransformations.
-                state.allTransformations.set(path, transformation);
-
-                // And remove it from state.remainingOrphans.
-                state.remainingOrphans.delete(path);
-              }
-
-              // Delete the tmpDir.
-              Deno.remove(tmpDir, { recursive: true });
-            }
-
-            return <AssetsScope>{children}</AssetsScope>;
+            oldWorkingDirectory = Deno.cwd();
           } catch (err) {
             ctx.error(
               `The ${
@@ -305,6 +130,185 @@ export function Assets(
             ctx.currentError();
             return ctx.halt();
           }
+
+          try {
+            await emptyDir(tmpDir);
+          } catch (err) {
+            ctx.error(
+              `Tried but failed to create and/or empty a temporary directory for processing asset transformations at ${
+                ctx.fmtFilePath(tmpDir)
+              }`,
+            );
+            ctx.error(
+              `See the ${ctx.fmtCode("tmpDir")} prop of the ${
+                ctx.fmtCode("Assets")
+              } macro for setting this path.`,
+            );
+            ctx.error("The file system error:");
+            ctx.error(err);
+            ctx.currentError();
+            return ctx.halt();
+          }
+
+          try {
+            await copy(input, tmpDir, {
+              overwrite: true,
+              preserveTimestamps: true,
+            });
+          } catch (err) {
+            ctx.error(
+              `Tried but failed to copy all assets into the temporary asset processing directory at ${
+                ctx.fmtFilePath(tmpDir)
+              }`,
+            );
+            ctx.error(
+              `See the ${ctx.fmtCode("tmpDir")} prop of the ${
+                ctx.fmtCode("Assets")
+              } macro for setting this path.`,
+            );
+            ctx.error("The file system error:");
+            ctx.error(err);
+            ctx.currentError();
+            return ctx.halt();
+          }
+
+          try {
+            Deno.chdir(tmpDir);
+          } catch (err) {
+            ctx.error(
+              `Tried but failed to ${
+                ctx.fmtCode("cd")
+              } into the temporary directory for processing asset transformations at ${
+                ctx.fmtFilePath(tmpDir)
+              }`,
+            );
+            ctx.error(
+              `See the ${ctx.fmtCode("tmpDir")} prop of the ${
+                ctx.fmtCode("Assets")
+              } macro for setting this path.`,
+            );
+            ctx.error("The file system error:");
+            ctx.error(err);
+            ctx.currentError();
+            return ctx.halt();
+          }
+
+          const normalisedTransformations = normaliseTransformations(
+            ctx,
+            transformations,
+            orphanAssetLoggingLevel === undefined
+              ? DEFAULT_LOG_ORPHANS
+              : orphanAssetLoggingLevel,
+          );
+
+          if (normalisedTransformations === null) {
+            return "";
+          }
+
+          const transformationResult = await runTransformations(
+            ctx,
+            normalisedTransformations,
+            tmpDir,
+            noInputLoggingLevel === undefined ? "warn" : noInputLoggingLevel,
+          );
+
+          if (transformationResult === null) {
+            return null;
+          } else {
+            // Done transforming. Now write the results at the correct location in the macromania_fs.
+            const denoFs = getFs(ctx);
+
+            if (!(denoFs instanceof SimpleFsDeno)) {
+              ctx.error(
+                `The ${
+                  ctx.fmtCode("<Assets>")
+                } macro ca only be used together with the ${
+                  ctx.fmtCode("macromania-fs")
+                } package, specifically with the ${
+                  ctx.fmtCode("simple-fs-deno")
+                } backend.`,
+              );
+              ctx.currentError();
+              return ctx.halt();
+            }
+
+            const mount = denoFs.getMount();
+            const physicalOutput = denoPath.join(
+              mount,
+              pwd(ctx).toString(),
+              output_.toString(),
+            );
+
+            // Reset working directory.
+            Deno.chdir(oldWorkingDirectory);
+
+            // Create the output directory.
+            try {
+              await emptyDir(physicalOutput);
+            } catch (err) {
+              ctx.error(
+                `Tried but failed to create and/or empty an asset output directory at ${
+                  ctx.fmtFilePath(physicalOutput)
+                }`,
+              );
+              ctx.error(
+                `See the ${ctx.fmtCode("output")} prop of the ${
+                  ctx.fmtCode("Assets")
+                } macro for setting this path.`,
+              );
+              ctx.error("The file system error:");
+              ctx.error(err);
+              ctx.currentError();
+              return ctx.halt();
+            }
+
+            // Move files from the tmpDir to the output directory.
+            try {
+              await move(tmpDir, physicalOutput, {
+                overwrite: true,
+              });
+            } catch (err) {
+              ctx.error(
+                `Tried but failed to move all assets from the temporary asset processing directory at ${
+                  ctx.fmtFilePath(tmpDir)
+                } to the output directory at ${
+                  ctx.fmtFilePath(physicalOutput)
+                }`,
+              );
+              ctx.error(
+                `See the ${ctx.fmtCode("output")} prop of the ${
+                  ctx.fmtCode("Assets")
+                } macro for setting the output path.`,
+              );
+              ctx.error("The file system error:");
+              ctx.error(err);
+              ctx.currentError();
+              return ctx.halt();
+            }
+
+            // Files have been moved to the correct positions. Finally, update some state:
+
+            const state = assetsGet(ctx);
+            for (
+              const [path, transformation] of transformationResult
+                .successfulTransformations.entries()
+            ) {
+              // Set the `outputPath` of all the transformationResult-s.
+              // We know that the physicalOutput path starts with the mount point of the macromania-fs, and removing that prefix yields
+              // the (physical) path inside the macromania-fs of the output directory.
+              transformation.outputPath = Path.fromPathish(
+                denoPath.join(output.toString(), transformation.tempLocation),
+              );
+
+              // Add the transformation to state.allTransformations.
+              state.allTransformations.set(path, transformation);
+
+              // And remove it from state.remainingOrphans.
+              state.remainingOrphans.delete(path);
+            }
+          }
+
+          return <AssetsScope>{children}</AssetsScope>;
         }}
       />
     </map>
@@ -480,7 +484,7 @@ async function runTransformations(
     !await trie.runTransformationsOnKnownDirectory(
       ctx,
       Path.absolute([]),
-      tmpDir,
+      ".",
       collector,
     )
   ) {
@@ -709,6 +713,11 @@ class TrieNode {
         `Failed to read contents of a temporary directory while trying to process assets:`,
       );
       ctx.error(`Path: ${ctx.fmtFilePath(currentPath)}`);
+      ctx.error(
+        `Current working directory (actual underlying filesystem): ${
+          ctx.fmtFilePath(Deno.cwd())
+        }`,
+      );
       ctx.error(err);
       ctx.currentError();
       ctx.halt();
