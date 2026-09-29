@@ -1,5 +1,6 @@
 import * as denoPath from "jsr:@std/path";
 import { copy, emptyDir, move } from "@std/fs";
+import { ensureFile } from "@std/fs/ensure-file";
 
 import { Children, Context, Expression, LogLevel } from "macromania";
 import { Path, type Pathish } from "@wormblossom/simple-fs-abstraction";
@@ -34,10 +35,25 @@ export type AssetProps = {
    */
   output: Pathish;
   /**
+   * Specifies dynamically created assets. The first value of each pair is the location where the asset should be placed; all macros act as if the `input` directory contained these dynamically created assets. This must be a relative path. The second value of each pair specifies the bytes that make up the asset.
+   */
+  dynamicAssets?: Array<[string, DynamicAsset]>;
+  /**
    * The `Assets` macro evaluates to its children.
    */
   children?: Children;
 };
+
+/**
+ * The contents of a dynamically created asset. When this is a string or byte array, the contents are simply written to the file system. In the third case, the function must write the raw bytes of the asset in the `writableStream` passed to it.
+ */
+export type DynamicAsset =
+  | string
+  | Uint8Array
+  | ((
+    ctx: Context,
+    writableStream: WritableStream<Uint8Array<ArrayBufferLike>>,
+  ) => Promise<void>);
 
 type AssetsState = {
   allTransformations: Map<string, ProcessedTransformation>;
@@ -62,6 +78,7 @@ export function Assets(
     input,
     output,
     children,
+    dynamicAssets = [],
   }: AssetProps,
 ): Expression {
   const DEFAULT_LOG_ORPHANS = "warn";
@@ -193,6 +210,9 @@ export function Assets(
             return ctx.halt();
           }
 
+          // Write dynamic assets into the tmpDir.
+          await writeDynamicAssets(ctx, dynamicAssets);
+
           const normalisedTransformations = normaliseTransformations(
             ctx,
             transformations,
@@ -208,7 +228,6 @@ export function Assets(
           const transformationResult = await runTransformations(
             ctx,
             normalisedTransformations,
-            tmpDir,
             noInputLoggingLevel === undefined ? "warn" : noInputLoggingLevel,
           );
 
@@ -453,7 +472,6 @@ type RegistrationInformationCollector = {
 async function runTransformations(
   ctx: Context,
   transformations: NormalisedTransformations,
-  tmpDir: string,
   unusedTransformationLoggingLevel: LogLevel,
 ): Promise<RegistrationInformationCollector | null> {
   const trie = buildTransformationsTrie(transformations);
@@ -844,3 +862,34 @@ type ProcessedTransformation = {
    */
   outputPath: Path;
 };
+
+// Must call this while the deno cwd is the tmpDir of assets.
+async function writeDynamicAssets(
+  ctx: Context,
+  dynamicAssets: Array<[string, DynamicAsset]>,
+) {
+  for (const [path, dynamicAsset] of dynamicAssets) {
+    try {
+      await ensureFile(path);
+
+      if (typeof dynamicAsset === "string") {
+        await Deno.writeTextFile(path, dynamicAsset);
+      } else if (dynamicAsset instanceof Uint8Array) {
+        await Deno.writeFile(path, dynamicAsset);
+      } else {
+        const file = await Deno.open(path, { write: true });
+        await dynamicAsset(ctx, file.writable);
+      }
+    } catch (err) {
+      ctx.error(
+        `Tried but failed to create a virtual asset at path ${
+          ctx.fmtFilePath(path)
+        }`,
+      );
+      ctx.error("The underlying error:");
+      ctx.error(err);
+      ctx.currentError();
+      return ctx.halt();
+    }
+  }
+}

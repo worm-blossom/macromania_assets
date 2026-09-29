@@ -7,7 +7,12 @@ import { Assets } from "../src/mod.tsx";
 const exp = (
   <ConfigFs fs={new SimpleFsDeno(".")}>
     <Dir name="build" mode="assertive">
-      <Assets transformations={[]} input="assets" output="assetsOut">
+      <Assets
+        transformations={[]}
+        input="assets"
+        output="assetsOut"
+        dynamicAssets={[["e", "e"], ["bar/f", "f"]]}
+      >
         <File name="z">z</File>
       </Assets>
     </Dir>
